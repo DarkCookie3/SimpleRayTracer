@@ -7,6 +7,7 @@
 #include "Materials/Lambertian.h"
 #include "Materials/Metal.h"
 #include "Objects/Sphere.h"
+#include "ThreadPool/ThreadPool.h"
 
 Vector3 Ray_color(const Ray& r, const Hittable& world, int depth)
 {
@@ -34,6 +35,7 @@ Vector3 Ray_color(const Ray& r, const Hittable& world, int depth)
     const auto t = 0.5 * (unit_direction.y + 1.0);
     return (1.0 - t) * Vector3(1.0, 1.0, 1.0) + t * Vector3(0.5, 0.7, 1.0);
 }
+
 
 HittableList random_scene()
 {
@@ -79,9 +81,9 @@ HittableList random_scene()
 
 int main()
 {
-    const int image_width = 1920;
-    const int image_height = 1080;
-    const int samples_per_pixel = 100;
+    const int image_width = 800;
+    const int image_height = 400;
+    const int samples_per_pixel = 30;
     const int max_depth = 30;
     const auto aspect_ratio = static_cast<float>(image_width) / image_height;
 
@@ -95,28 +97,42 @@ int main()
     const auto dist_to_focus = 7.0;
     const auto aperture = 0.1;
 
+    Vector3* image_buffer = new Vector3[image_height * image_width];
+
     const Camera cam(lookfrom, lookat, vup, 20, aspect_ratio, aperture, dist_to_focus);
 
-    for (int j = image_height - 1; j >= 0; --j)
+    ThreadPool threadPool;
+    threadPool.Start();
+
+    for (int j = 0; j < image_height; j++)
     {
-        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
+        std::cerr << "\rScanlines remaining: " << image_height-j << ' ' << std::flush;
 
-        for (int i = 0; i < image_width; ++i)
+        for (int i = 0; i < image_width; i++)
         {
-            Vector3 color(0, 0, 0);
-
-            for (int s = 0; s < samples_per_pixel; ++s)
-            {
-                const auto u = (i + random_float()) / image_width;
-                const auto v = (j + random_float()) / image_height;
-                Ray r = cam.GetRay(u, v);
-                color += Ray_color(r, world, max_depth);
-            }
-
-            color.OutputValues(std::cout, samples_per_pixel);
+            threadPool.QueueJob([&] {
+                for (int s = 0; s < samples_per_pixel; s++)
+                {
+                    auto u = (i + random_float()) / image_width;
+                    auto v = (j + random_float()) / image_height;
+                    Ray r = cam.GetRay(u, v);
+                    image_buffer[image_width * j + i] += Ray_color(r, world, max_depth);
+                }
+                });
         }
     }
 
+    for (int j = image_height - 1; j >= 0; --j)
+    {
+        std::cerr << "\rWriting line: " << image_height - j << ' ' << std::flush;
+        for (int i = 0; i < image_width; ++i)
+        {
+            image_buffer[image_width * j + i].OutputValues(std::cout, samples_per_pixel);
+        }
+    }
+
+    delete[] image_buffer;
+    threadPool.Stop();
     std::cerr << "\nDone.\n";
 
     return 0;

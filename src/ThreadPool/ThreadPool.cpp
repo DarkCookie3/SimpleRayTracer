@@ -2,11 +2,11 @@
 
 void ThreadPool::Start()
 {
-    unsigned int num_threads = std::thread::hardware_concurrency();
+    int num_threads = std::thread::hardware_concurrency();
     threads.resize(num_threads);
-    for (unsigned int i = 0; i < num_threads; i++)
+    for (uint32_t i = 0; i < num_threads; i++) 
     {
-        threads.at(i) = std::thread(&ThreadPool::ThreadLoop, this);
+        threads.at(i) = std::thread(&ThreadLoop);
     }
 }
 

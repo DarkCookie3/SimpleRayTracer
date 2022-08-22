@@ -32,19 +32,9 @@ void ThreadPool::Stop()
     threads.clear();
 }
 
-bool ThreadPool::busy()
+int ThreadPool::GetJobsCount()
 {
-    bool poolbusy;
-    {
-        std::unique_lock<std::mutex> lock(queue_mutex);
-        poolbusy = jobs.empty();
-    }
-    return poolbusy;
-}
-
-bool ThreadPool::HasJob()
-{
-    return jobs.size() > 0;
+    return jobs.size();
 }
 
 void ThreadPool::ThreadLoop()

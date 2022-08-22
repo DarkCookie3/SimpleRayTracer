@@ -14,9 +14,8 @@ public:
     void Start();
     void QueueJob(const std::function<void()>& job);
     void Stop();
-    bool busy();
 
-    bool HasJob();
+    int GetJobsCount();
 
 private:
     void ThreadLoop();

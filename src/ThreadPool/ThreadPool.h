@@ -1,16 +1,22 @@
 #pragma once
 #include <functional>
-#include <thread>
 #include <mutex>
 #include <queue>
 
-class ThreadPool 
+struct IntPair
 {
+    int a;
+    int b;
+};
+
+class ThreadPool {
 public:
     void Start();
     void QueueJob(const std::function<void()>& job);
     void Stop();
-    bool Busy();
+    bool busy();
+
+    bool HasJob();
 
 private:
     void ThreadLoop();

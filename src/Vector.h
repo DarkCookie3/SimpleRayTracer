@@ -194,7 +194,7 @@ public:
 		return r_out_parallel + r_out_perp;
 	}
 
-	void OutputValues(std::ostream& out, int samples_per_pixel) const
+	static void NormalizeAndOutput(T r, T g, T b, std::ostream& out, int samples_per_pixel)
 	{
 		const auto scale = 1.0 / samples_per_pixel;
 		const auto R = sqrt(scale * r);
@@ -206,6 +206,17 @@ public:
 			<< static_cast<int>(256 * std::clamp(B, 0.0, 0.999)) << '\n';
 	}
 
+	void OutputValues(std::ostream& out, int samples_per_pixel) const
+	{
+		const auto scale = 1.0 / samples_per_pixel;
+		const auto R = sqrt(scale * r);
+		const auto G = sqrt(scale * g);
+		const auto B = sqrt(scale * b);
+
+		out << static_cast<int>(256 * std::clamp(R, 0.0, 0.999)) << ' '
+			<< static_cast<int>(256 * std::clamp(G, 0.0, 0.999)) << ' '
+			<< static_cast<int>(256 * std::clamp(B, 0.0, 0.999)) << '\n';
+	}
 };
 
 template <typename T>

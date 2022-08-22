@@ -8,7 +8,27 @@
 #include "Materials/Metal.h"
 #include "Objects/Sphere.h"
 
-Vector3 Ray_color(const Ray& r, const Hittable& world, int depth)
+#include "ThreadPool/ThreadPool.h"
+
+
+const int image_width = 800;
+const int image_height = 400;
+const int samples_per_pixel = 20;
+const int max_depth = 30;
+const auto aspect_ratio = static_cast<float>(image_width) / image_height;
+
+const Vector3 lookfrom(13, 2, 3);
+const Vector3 lookat(0, 0, 0);
+const Vector3 vup(0, 1, 0);
+const auto dist_to_focus = 7.0;
+const auto aperture = 0.1;
+
+const Camera cam(lookfrom, lookat, vup, 20, aspect_ratio, aperture, dist_to_focus);
+const HittableList* world = nullptr;
+
+float* image_buffer = nullptr;
+
+Vector3 Ray_color(const Ray& r, const HittableList* world, int depth)
 {
     HitRecord rec;
 
@@ -17,7 +37,7 @@ Vector3 Ray_color(const Ray& r, const Hittable& world, int depth)
         return Vector3(0, 0, 0);
     }
 
-    if (world.Hit(r, 0.001, infinity, rec))
+    if (world->Hit(r, 0.001, infinity, rec))
     {
         Ray scattered;
         Vector3 attenuation;
@@ -35,11 +55,28 @@ Vector3 Ray_color(const Ray& r, const Hittable& world, int depth)
     return (1.0 - t) * Vector3(1.0, 1.0, 1.0) + t * Vector3(0.5, 0.7, 1.0);
 }
 
-HittableList random_scene()
+void Pixel_color(int i, int j)
 {
-    HittableList world;
+    Vector3 color(0, 0, 0);
 
-    world.Add(std::make_shared<Sphere>(Vector3(0, -1000, 0), 1000, std::make_shared<Lambertian>(Vector3(0.5, 0.5, 0.5))));
+    for (int s = 0; s < samples_per_pixel; ++s)
+    {
+        const auto u = (i + random_float()) / image_width;
+        const auto v = (j + random_float()) / image_height;
+        Ray r = cam.GetRay(u, v);
+        color += Ray_color(r, world, max_depth);
+    }
+    int index = (j * image_width + i) * 3;
+    image_buffer[index++] = color.r;
+    image_buffer[index++] = color.g;
+    image_buffer[index] = color.b;
+}
+
+HittableList* random_scene()
+{
+    HittableList* world = new HittableList();
+
+    world->Add(std::make_shared<Sphere>(Vector3(0, -1000, 0), 1000, std::make_shared<Lambertian>(Vector3(0.5, 0.5, 0.5))));
 
     for (int a = -11; a < 11; ++a)
     {
@@ -52,71 +89,65 @@ HittableList random_scene()
                 if (choose_mat < 0.8)
                 {
                     auto albedo = Vector3::Random() * Vector3::Random();
-                    world.Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Lambertian>(albedo)));
+                    world->Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Lambertian>(albedo)));
                 }
                 else if (choose_mat < 0.95)
                 {
                     auto albedo = Vector3::Random(0.5, 1);
                     auto fuzz = random_float(0, 0.5);
-                    world.Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Metal>(albedo, fuzz)));
+                    world->Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Metal>(albedo, fuzz)));
                 }
                 else
                 {
-                    world.Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Dielectric>(1.5)));
+                    world->Add(std::make_shared<Sphere>(center, 0.2, std::make_shared<Dielectric>(1.5)));
                 }
             }
         }
     }
 
-    world.Add(std::make_shared<Sphere>(Vector3(0, 1, 0), 1.0, std::make_shared<Dielectric>(1.5)));
+    world->Add(std::make_shared<Sphere>(Vector3(0, 1, 0), 1.0, std::make_shared<Dielectric>(1.5)));
 
-    world.Add(std::make_shared<Sphere>(Vector3(-4, 1, -2), 1.0, std::make_shared<Lambertian>(Vector3(0.4, 0.2, 0.1))));
+    world->Add(std::make_shared<Sphere>(Vector3(-4, 1, -2), 1.0, std::make_shared<Lambertian>(Vector3(0.4, 0.2, 0.1))));
 
-    world.Add(std::make_shared<Sphere>(Vector3(4, 1, 0), 1.0, std::make_shared<Metal>(Vector3(0.7, 0.6, 0.5), 0.0)));
+    world->Add(std::make_shared<Sphere>(Vector3(4, 1, 0), 1.0, std::make_shared<Metal>(Vector3(0.7, 0.6, 0.5), 0.0)));
 
     return world;
 }
 
 int main()
 {
-    const int image_width = 1920;
-    const int image_height = 1080;
-    const int samples_per_pixel = 100;
-    const int max_depth = 30;
-    const auto aspect_ratio = static_cast<float>(image_width) / image_height;
+    image_buffer = new float[image_height * image_width * 3];
+    world = random_scene();
+
+    ThreadPool* threads = new ThreadPool();
+    threads->Start();
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
-    const auto world = random_scene();
-
-    const Vector3 lookfrom(13, 2, 3);
-    const Vector3 lookat(0, 0, 0);
-    const Vector3 vup(0, 1, 0);
-    const auto dist_to_focus = 7.0;
-    const auto aperture = 0.1;
-
-    const Camera cam(lookfrom, lookat, vup, 20, aspect_ratio, aperture, dist_to_focus);
-
-    for (int j = image_height - 1; j >= 0; --j)
+    for (int j = 0; j < image_height; j++)
     {
-        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
-
-        for (int i = 0; i < image_width; ++i)
+        for (int i = 0; i < image_width; i++)
         {
-            Vector3 color(0, 0, 0);
-
-            for (int s = 0; s < samples_per_pixel; ++s)
-            {
-                const auto u = (i + random_float()) / image_width;
-                const auto v = (j + random_float()) / image_height;
-                Ray r = cam.GetRay(u, v);
-                color += Ray_color(r, world, max_depth);
-            }
-
-            color.OutputValues(std::cout, samples_per_pixel);
+            threads->QueueJob([i, j] {Pixel_color(i, j); });
         }
     }
 
+    while (threads->HasJob())
+    {
+        std::cerr << " ";
+    }
+
+    threads->Stop();
+
+    for (int j = image_height - 1; j >= 0; --j)
+    {
+        for (int i = 0; i < image_width; ++i)
+        {
+            int index = (j * image_width + i) * 3;
+            Vector3::NormalizeAndOutput(image_buffer[index], image_buffer[index+1], image_buffer[index+2], std::cout, samples_per_pixel);
+        }
+    }
+ 
     std::cerr << "\nDone.\n";
 
     return 0;
